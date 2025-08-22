@@ -3,8 +3,8 @@ http:
 
 salesforce:
   username: "patilsuchitap-w04d@force.com"
-  password: "Test@987"
-  token:  "LehqNAjPO8R8nfbWylr0U10a7"
+  password: ""
+  token:  ""
   host: https://test.salesforce.com/services/oauth2/token
   
 
