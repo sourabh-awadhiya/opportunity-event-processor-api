@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+    
+    <!-- Common Error Handling Flow -->
+    <flow name="errorHandlingFlow">
+        <logger level="ERROR" message="Error occurred: #[error.description]" />
+        
+        <choice>
+            <when expression="#[error.errorType.namespace == 'HTTP' and error.errorType.identifier == 'BAD_REQUEST']">
+                <set-variable variableName="httpStatus" value="400" />
+                <set-variable variableName="errorMessage" value="Bad Request: Invalid input data" />
+            </when>
+            <when expression="#[error.errorType.namespace == 'HTTP' and error.errorType.identifier == 'UNAUTHORIZED']">
+                <set-variable variableName="httpStatus" value="401" />
+                <set-variable variableName="errorMessage" value="Unauthorized: Authentication required" />
+            </when>
+            <when expression="#[error.errorType.namespace == 'HTTP' and error.errorType.identifier == 'FORBIDDEN']">
+                <set-variable variableName="httpStatus" value="403" />
+                <set-variable variableName="errorMessage" value="Forbidden: Insufficient permissions" />
+            </when>
+            <when expression="#[error.errorType.namespace == 'HTTP' and error.errorType.identifier == 'NOT_FOUND']">
+                <set-variable variableName="httpStatus" value="404" />
+                <set-variable variableName="errorMessage" value="Not Found: Resource does not exist" />
+            </when>
+            <when expression="#[error.errorType.namespace == 'HTTP' and error.errorType.identifier == 'METHOD_NOT_ALLOWED']">
+                <set-variable variableName="httpStatus" value="405" />
+                <set-variable variableName="errorMessage" value="Method Not Allowed: Invalid HTTP method" />
+            </when>
+            <when expression="#[error.errorType.namespace == 'HTTP' and error.errorType.identifier == 'CONNECTIVITY']">
+                <set-variable variableName="httpStatus" value="503" />
+                <set-variable variableName="errorMessage" value="Service Unavailable: Backend system is not responding" />
+            </when>
+            <when expression="#[error.errorType.namespace == 'VALIDATION']">
+                <set-variable variableName="httpStatus" value="400" />
+                <set-variable variableName="errorMessage" value="Validation Error: #[error.description]" />
+            </when>
+            <otherwise>
+                <set-variable variableName="httpStatus" value="500" />
+                <set-variable variableName="errorMessage" value="Internal Server Error: An unexpected error occurred" />
+            </otherwise>
+        </choice>
+        
+        <set-payload value="#[%dw 2.0
+output application/json
+---
+{
+    'timestamp': now(),
+    'status': vars.httpStatus,
+    'error': vars.errorMessage,
+    'message': error.description,
+    'path': attributes.requestPath default '/',
+    'correlationId': vars.correlationId default uuid()
+}]"  />
+    </flow>
+</mule>

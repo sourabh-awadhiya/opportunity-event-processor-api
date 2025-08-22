@@ -1,0 +1,204 @@
+#%RAML 1.0
+title: opportunity-event-processor-api
+version: v1
+baseUri: https://api.company.com/process/v1
+mediaType: application/json
+protocols: [HTTPS]
+
+description: |
+  # Opportunity Event Processor API
+  
+  This Process API subscribes to Salesforce Platform Events, specifically focusing on Opportunity events. 
+  It processes opportunity data when status changes to 'Closed Won', validates against business rules, 
+  and orchestrates order creation by calling the sales-order-system-api to create orders in Google Sheets.
+  
+  ## Key Functions:
+  - Subscribe to Salesforce Opportunity Platform Events
+  - Filter for 'Closed Won' opportunities
+  - Validate opportunity data against business rules
+  - Transform opportunity data to order format
+  - Orchestrate order creation in Google Sheets via sales-order-system-api
+  
+  This API follows MuleSoft API-led connectivity patterns as a Process API layer component.
+
+traits:
+  pageable:
+    queryParameters:
+      pageSize:
+        description: Number of items per page
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+      pageNumber:
+        description: Page number to retrieve
+        type: integer
+        minimum: 1
+        default: 1
+  rateLimited:
+    headers:
+      X-Rate-Limit:
+        description: The number of allowed requests in the current period
+        type: integer
+      X-Rate-Limit-Remaining:
+        description: The number of remaining requests in the current period
+        type: integer
+      X-Rate-Limit-Reset:
+        description: The number of seconds left in the current period
+        type: integer
+  errorResponses:
+    responses:
+      400:
+        description: Bad Request - The request was invalid or cannot be served. The exact error is explained in the response payload.
+        body:
+          application/json:
+            type: ErrorResponse
+      401:
+        description: Unauthorized - Authentication credentials are missing or invalid
+        body:
+          application/json:
+            type: ErrorResponse
+      403:
+        description: Forbidden - The request is valid but the server is refusing action
+        body:
+          application/json:
+            type: ErrorResponse
+      404:
+        description: Not Found - The requested resource could not be found
+        body:
+          application/json:
+            type: ErrorResponse
+      500:
+        description: Internal Server Error - The server encountered an unexpected condition
+        body:
+          application/json:
+            type: ErrorResponse
+      503:
+        description: Service Unavailable - The server is currently unavailable
+        body:
+          application/json:
+            type: ErrorResponse
+
+types:
+  ErrorResponse:
+    properties:
+      timestamp:
+        type: datetime
+        required: true
+        description: The time when the error occurred
+      status:
+        type: integer
+        required: true
+        description: HTTP status code
+      error:
+        type: string
+        required: true
+        description: Error type
+      message:
+        type: string
+        required: true
+        description: Error message
+      path:
+        type: string
+        required: true
+        description: The path that caused the error
+      correlationId:
+        type: string
+        required: true
+        description: Correlation ID for tracking the request
+
+  OrderRequest:
+    properties:
+      opportunityId:
+        type: string
+        required: true
+        description: The Salesforce Opportunity ID
+      customerName:
+        type: string
+        required: true
+        description: Customer name
+      orderAmount:
+        type: number
+        required: true
+        description: Total order amount
+      orderDate:
+        type: datetime
+        required: true
+        description: Date when the order was placed
+      items:
+        type: array
+        required: true
+        description: List of order items
+        items:
+          properties:
+            productId:
+              type: string
+              required: true
+            productName:
+              type: string
+              required: true
+            quantity:
+              type: integer
+              required: true
+              minimum: 1
+            unitPrice:
+              type: number
+              required: true
+
+  OrderResponse:
+    properties:
+      orderId:
+        type: string
+        required: true
+        description: Generated Order ID
+      status:
+        type: string
+        required: true
+        enum: [CREATED, PROCESSING, COMPLETED, FAILED]
+      message:
+        type: string
+        required: false
+      createdDate:
+        type: datetime
+        required: true
+
+/orders:
+  post:
+    displayName: Create Order from Opportunity
+    description: Manually trigger order creation from a Salesforce opportunity
+    is: [errorResponses]
+    body:
+      application/json:
+        type: OrderRequest
+    responses:
+      201:
+        body:
+          application/json:
+            type: OrderResponse
+        headers:
+          Location:
+            type: string
+            description: URL to the newly created order
+
+  /status:
+    get:
+      displayName: Get Order Processing Status
+      description: Check the status of the order processing service
+      is: [errorResponses]
+      responses:
+        200:
+          body:
+            application/json:
+              properties:
+                status:
+                  type: string
+                  enum: [UP, DOWN, DEGRADED]
+                uptime:
+                  type: number
+                lastEventProcessed:
+                  type: datetime
+                  required: false
+                processedCount:
+                  type: integer
+                errorCount:
+                  type: integer

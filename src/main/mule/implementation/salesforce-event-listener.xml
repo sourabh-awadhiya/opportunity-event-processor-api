@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:salesforce="http://www.mulesoft.org/schema/mule/salesforce" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/salesforce http://www.mulesoft.org/schema/mule/salesforce/current/mule-salesforce.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+    
+    <!-- Flow to subscribe to Salesforce Opportunity Platform Events -->
+
+<salesforce:sfdc-config name="Salesforce_Config" doc:name="Salesforce Config" doc:id="346ba64b-f377-453a-804f-91b4e393b09b" >
+		<salesforce:basic-connection username="${salesforce.username}" password="${salesforce.password}" securityToken="${salesforce.token}" url="https://login.salesforce.com/services/Soap/u/63.0" >
+			<reconnection >
+				<reconnect-forever />
+			</reconnection>
+		</salesforce:basic-connection>
+	</salesforce:sfdc-config>
+	<flow name="salesforce-opportunity-event-listener">
+        
+        <salesforce:replay-channel-listener replayOption="ONLY_NEW" doc:name="Replay channel listener" doc:id="97ca33d6-0097-47db-8c47-2a2602f49104" config-ref="Salesforce_Config" streamingChannel="/event/Opportunity_Change_Event__e"/>
+		<logger level="INFO" message="#[%dw 2.0&#10;output application/json&#10;---&#10;payload]" />
+        
+        <!-- Set correlation ID for tracking -->
+        <set-variable variableName="correlationId" value="#[uuid()]" />
+        
+        <!-- Filter for 'Closed Won' opportunities -->
+        
+        <set-payload value="#[output json&#10;---&#10;read(payload.data.payload.sfobject__c)]" doc:name="Set Payload" doc:id="21072b17-331a-4037-86bf-faed26986a93" />
+		<logger level="INFO" message="Transforming opportunity to order format" />
+		<ee:transform doc:name="Transform Message" doc:id="0624fc54-f52a-4809-bffb-2998784a9a67" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+var Order = randomInt(10000)
+---
+payload.Products map {
+	"productCode": $.ProductId default $.Product2.Id,
+    "externalOrderId": payload.Id default payload.OwnerId,
+    "orderDate": payload.CloseDate,
+    "customerId": payload.AccountId,
+    "customerName": payload.RelatedContacts.FirstName[$$] default "Marc",
+    "billingAddress.city": payload.Account.BillingCity,
+    "billingAddress.state": payload.Account.BillingCity,
+    "shippingAddress.city": payload.Account.BillingCity,
+    "shippingAddress.state": payload.Account.BillingCity,
+    "salesRep": payload.Name,
+    "currency": "USD",
+    "totalAmount": payload.Amount,
+    "OrderLineItem": $$ + 1,
+    "sourceSystem": "salesforce",
+    "OrderNumber": Order,
+    "productName": $.ProductName default $.Product2.Name,
+    "quantity": $.Quantity,
+    "unitPrice": $.UnitPrice,
+    "lineTotal": $.UnitPrice * $.Quantity,
+    "contact.name": payload.RelatedContacts.FirstName[$$] default payload.RelatedContacts.LastName[$$],
+    "contact.email": payload.RelatedContacts.Email[$$],
+    "conatct.phone": payload.RelatedContacts.Phone[$$]
+
+
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<logger level="INFO" message="Transformed order data: #[payload]" />
+		<foreach doc:name="For Each" doc:id="edcbaaad-c37f-4b01-a20e-78e9c00ef4f2" collection="#[payload]">
+			<try doc:name="Try" doc:id="2b72c58f-14af-4878-b84c-b03adccb183a" >
+				<http:request method="POST" doc:name="Request" doc:id="83d237be-16e4-4ec4-9860-a4faa9b56224" url="https://sales-order-system-api-h5tag.5sc6y6-4.usa-e2.cloudhub.io/api/system/v1/orders" />
+				<error-handler >
+					<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="1ed25423-6ad6-4c4c-9fa9-09367437ef8a" >
+						<logger level="INFO" doc:name="Logger" doc:id="b751565f-0afa-497d-9cee-f74929d94592" message="#[error]"/>
+					</on-error-continue>
+				</error-handler>
+			</try>
+			<logger level="INFO" doc:name="Logger" doc:id="a058c917-c33e-487f-ae52-94b26c0c2a4c" message="::::::::::::::Order Created Successfully::::::::::::::::::"/>
+		</foreach>
+		<error-handler>
+            <on-error-propagate type="ANY">
+                <logger level="ERROR" message="Error processing Salesforce event: #[error.description]" />
+            </on-error-propagate>
+        </error-handler>
+    </flow>
+    
+    <!-- Transform Salesforce Opportunity data to Order format -->
+</mule>
